@@ -1,0 +1,176 @@
+
+---
+
+- name: Deploy LAMP on Ubuntu hosts
+
+  hosts: ubuntu
+
+  become: true
+ 
+  vars:
+
+    user: bob   # change this if you want, or override with: -e "user=bob"
+ 
+  pre_tasks:
+
+    - name: Update apt repository cache, if necessary
+
+      ansible.builtin.apt:
+
+        update_cache: yes
+
+        cache_valid_time: 3600
+ 
+  handlers:
+
+    - name: restart apache
+
+      ansible.builtin.service:
+
+        name: apache2
+
+        state: restarted
+ 
+  tasks:
+
+    - name: Install LAMP packages
+
+      ansible.builtin.apt:
+
+        name:
+
+          - apache2
+
+          - mariadb-server
+
+          - mariadb-client
+
+          - php
+
+          - libapache2-mod-php
+
+          - php-mysql
+
+        state: present
+ 
+    - name: Stop and disable UFW if installed
+
+      ansible.builtin.service:
+
+        name: ufw
+
+        state: stopped
+
+        enabled: false
+
+      ignore_errors: true
+ 
+    - name: Stop nginx if installed (avoid port 80 conflict)
+
+      ansible.builtin.service:
+
+        name: nginx
+
+        state: stopped
+
+        enabled: false
+
+      ignore_errors: true
+ 
+    - name: Set Apache ServerName
+
+      ansible.builtin.lineinfile:
+
+        path: /etc/apache2/apache2.conf
+
+        line: "ServerName localhost"
+
+        create: yes
+ 
+    - name: Validate Apache configuration
+
+      ansible.builtin.command: apachectl configtest
+
+      register: apache_test
+
+      changed_when: false
+
+      failed_when: apache_test.rc != 0
+ 
+    - name: Start MariaDB
+
+      ansible.builtin.service:
+
+        name: mariadb
+
+        state: started
+
+        enabled: true
+ 
+    - name: Start Apache
+
+      ansible.builtin.service:
+
+        name: apache2
+
+        state: started
+
+        enabled: true
+ 
+    - name: Enable Apache userdir module for home directory hosting
+
+      community.general.apache2_module:
+
+        name: userdir
+
+        state: present
+
+      notify: restart apache
+ 
+    - name: Add user "{{ user }}"
+
+      ansible.builtin.user:
+
+        name: "{{ user }}"
+
+        group: sys
+
+        create_home: yes
+ 
+    - name: Set permissions on the home directory for "{{ user }}"
+
+      ansible.builtin.file:
+
+        path: "/home/{{ user }}"
+
+        mode: "0755"
+ 
+    - name: Create the public_html directory for "{{ user }}"
+
+      ansible.builtin.file:
+
+        path: "/home/{{ user }}/public_html"
+
+        state: directory
+
+        owner: "{{ user }}"
+
+        group: sys
+
+        mode: "0755"
+ 
+    - name: Upload sample index.html to public_html
+
+      ansible.builtin.copy:
+
+        src: ./index.html
+
+        dest: "/home/{{ user }}/public_html/index.html"
+
+        owner: "{{ user }}"
+
+        group: sys
+
+        mode: "0644"
+
+ 
